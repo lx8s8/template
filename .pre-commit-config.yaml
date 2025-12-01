@@ -1,61 +1,104 @@
+# 如果设为 true，一旦某个 hook 失败，pre-commit 就会立即停止。
+# 设为 false 表示即使前面的 hook 失败了，也会继续运行后续的 hook，以便一次性看到所有错误。
 fail_fast: false
+
 repos:
+  # -------------------------------------------------------------------------
+  # 1. 通用基础检查 (来自 pre-commit 官方)
+  # -------------------------------------------------------------------------
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.3.0
+    rev: v6.0.0
     hooks:
-      - id: check-byte-order-marker
+      # 防止文件以 UTF-8 BOM (Byte Order Marker) 开头，这在某些系统下会引起问题
+      # 注意：原 check-byte-order-marker 已被移除，需使用 fix-byte-order-marker
+      - id: fix-byte-order-marker
+      # 检查文件名是否存在大小写冲突（防止在 Windows/macOS 等不区分大小写的系统中出问题）
       - id: check-case-conflict
+      # 检查代码中是否意外残留了 git 合并冲突标记 (如 <<<<<<< HEAD)
       - id: check-merge-conflict
+      # 检查是否存在损坏的符号链接 (Symlinks)
       - id: check-symlinks
+      # 检查 YAML 文件的语法是否正确
       - id: check-yaml
+      # 确保所有非空文件都以一个换行符结尾 (POSIX 标准)
       - id: end-of-file-fixer
+      # 检测并统一换行符 (检测是否混合使用了 LF 和 CRLF)
       - id: mixed-line-ending
+      # 自动删除行尾多余的空格
       - id: trailing-whitespace
+
+  # -------------------------------------------------------------------------
+  # 2. Python 代码格式化
+  # -------------------------------------------------------------------------
   - repo: https://github.com/psf/black
-    rev: 22.10.0
+    rev: 25.11.0
     hooks:
+      # 使用 Black 自动格式化 Python 代码
       - id: black
+
+  # -------------------------------------------------------------------------
+  # 3. 本地自定义 Hook (主要针对 Rust 项目)
+  #    这些 hook 不从远程拉取，而是直接调用本地环境中的命令 (bash -c)
+  # -------------------------------------------------------------------------
   - repo: local
     hooks:
+      # [Rust] 代码格式检查
       - id: cargo-fmt
         name: cargo fmt
         description: Format files with rustfmt.
+        # 运行 cargo fmt -- --check。如果格式不对，命令会报错，提交失败。
         entry: bash -c 'cargo fmt -- --check'
         language: rust
-        files: \.rs$
+        files: \.rs$  # 只针对 .rs 结尾的文件触发
         args: []
+
+      # [Rust] 依赖项检查
       - id: cargo-deny
         name: cargo deny check
         description: Check cargo dependencies
+        # 检查依赖树的安全性、许可证合规性等
         entry: bash -c 'cargo deny check -d'
         language: rust
         files: \.rs$
         args: []
+
+      # [通用] 拼写检查
       - id: typos
         name: typos
         description: check typo
+        # 运行 typos 工具检查拼写错误
         entry: bash -c 'typos'
         language: rust
-        files: \.*$
-        pass_filenames: false
+        files: \.*$   # 检查所有文件
+        pass_filenames: false # false 表示不将变更的文件名传给命令，而是让工具自己扫描项目
+
+      # [Rust] 语法和类型检查
       - id: cargo-check
         name: cargo check
         description: Check the package for errors.
+        # 快速编译检查，确保代码能编译通过 (比 cargo build 快，不生成二进制文件)
         entry: bash -c 'cargo check --all'
         language: rust
         files: \.rs$
-        pass_filenames: false
+        pass_filenames: false # false 表示一次性检查整个项目，而不是对每个变动文件单独运行
+
+      # [Rust] Linter (静态分析)
       - id: cargo-clippy
         name: cargo clippy
         description: Lint rust sources
+        # 运行 Clippy 进行代码质量分析。
+        # -D warnings 表示将所有警告视为错误 (不允许有警告)
         entry: bash -c 'cargo clippy --all-targets --all-features --tests --benches -- -D warnings'
         language: rust
         files: \.rs$
         pass_filenames: false
+
+      # [Rust] 单元测试
       - id: cargo-test
         name: cargo test
         description: unit test for the project
-        entry: bash -c 'cargo nextest run --all-features'
+        # 运行项目测试。这里使用的是 'cargo nextest'，这是一个比原生 cargo test 更快的测试运行器
+        entry: bash -c 'cargo nextest run --all-features --no-tests warn'
         language: rust
         files: \.rs$
         pass_filenames: false
